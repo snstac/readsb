@@ -1,0 +1,56 @@
+name: Build Debian package for amd64 (x86_64)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-debs:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt install -y aha git make gcc g++ cmake pkg-config librtlsdr-dev whiptail \
+        libpq-dev git build-essential debhelper libusb-1.0-0-dev \
+        librtlsdr-dev librtlsdr0 pkg-config \
+        libncurses-dev zlib1g-dev zlib1g libzstd-dev libzstd1
+
+    - uses: jtdor/build-deb-action@v1
+      env:
+        DEB_BUILD_OPTIONS: noautodbgsym
+      with:
+        buildpackage-opts: --build=binary --no-sign --build-profiles=rtlsdr
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: artifact-deb
+        path: |
+          ./debian/artifacts/*.deb
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Locate artifacts
+      run: ls -alR
+
+    - name: Upload Release Asset
+      id: upload-release-asset
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ./debian/artifacts/*.deb
+        tag: ${{ github.ref }}
+        overwrite: true
+        file_glob: true
