@@ -14,7 +14,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        apt install -y aha git make gcc g++ cmake pkg-config librtlsdr-dev whiptail \
+        sudo apt install -y aha git make gcc g++ cmake pkg-config librtlsdr-dev whiptail \
         libpq-dev git build-essential debhelper libusb-1.0-0-dev \
         librtlsdr-dev librtlsdr0 pkg-config \
         libncurses-dev zlib1g-dev zlib1g libzstd-dev libzstd1
