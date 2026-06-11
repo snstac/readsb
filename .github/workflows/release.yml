@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper devscripts pkg-config help2man \
+            libncurses-dev zlib1g-dev libzstd-dev libusb-1.0-0-dev \
+            librtlsdr-dev libsoapysdr-dev libhackrf-dev
+
+      - name: Build Debian package (rtlsdr+soapysdr+hackrf)
+        env:
+          DEB_BUILD_OPTIONS: noautodbgsym
+        run: |
+          dpkg-buildpackage -us -uc -b --build-profiles=rtlsdr,soapysdr,hackrf
+          mkdir -p out
+          cp ../readsb_*_${{ matrix.arch }}.deb out/
+          ls -la out/
+
+      - name: Verify SDR support compiled in
+        run: |
+          dpkg -x out/readsb_*_${{ matrix.arch }}.deb x
+          HELP="$(x/usr/bin/readsb --help 2>&1 || true)"
+          echo "$HELP" | grep -qiE 'rtlsdr'   || { echo "missing RTL-SDR support" >&2; exit 1; }
+          echo "$HELP" | grep -qiE 'soapysdr' || { echo "missing SoapySDR support" >&2; exit 1; }
+          echo "$HELP" | grep -qiE 'hackrf'   || { echo "missing HackRF support" >&2; exit 1; }
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.deb
