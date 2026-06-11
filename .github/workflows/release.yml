@@ -18,14 +18,18 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
+    # Build on Debian trixie (AryaOS target): Ubuntu runners produce debs
+    # depending on ubuntu lib names (librtlsdr2) that don't exist on Debian.
+    container:
+      image: debian:trixie
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential debhelper devscripts pkg-config help2man \
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential debhelper devscripts pkg-config help2man git \
             libncurses-dev zlib1g-dev libzstd-dev libusb-1.0-0-dev \
             librtlsdr-dev libsoapysdr-dev libhackrf-dev
 
