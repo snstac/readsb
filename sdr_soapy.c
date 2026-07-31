@@ -19,6 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "readsb.h"
+#include <math.h>
 #include "sdr_soapy.h"
 
 #include <SoapySDR/Version.h>
@@ -296,11 +297,36 @@ bool soapyOpen(void)
             }
         }
 
-        //double gain = (Modes.gain == MODES_DEFAULT_GAIN ? SOAPY.gain_range.maximum : Modes.gain);
-        double gain = (Modes.gain == MODES_MAX_GAIN ? SOAPY.gain_range.maximum : Modes.gain);
+        // Modes.gain is in TENTHS of a dB. readsb.c parses --gain as
+        //     Modes.gain = (int)(atof(arg) * 10);   // "Gain is in tens of DBs"
+        // because librtlsdr's rtlsdr_set_tuner_gain() takes tenths. SoapySDR's
+        // setGain() takes plain dB, so passing Modes.gain straight through is
+        // out by a factor of ten.
+        //
+        // Effect: every --gain above ~6.2 was clamped to the device maximum, so
+        // --gain 30, 40 and 55 all silently produced maximum gain. Measured on a
+        // LimeSDR Mini v2 (max 61 dB), reported noise floor:
+        //     --gain 30 -> -10.0 dBFS      --gain 3.0 -> -40.0 dBFS
+        //     --gain 40 ->  -9.9 dBFS      --gain 4.0 -> -30.6 dBFS
+        // The right-hand column is the one that tracks 10 dB per unit, which is
+        // what a correctly-scaled gain looks like. The left-hand column is the
+        // front end pinned at maximum and saturating.
+        double gain = (Modes.gain == MODES_MAX_GAIN
+                       ? SOAPY.gain_range.maximum
+                       : Modes.gain / 10.0);
         if (SoapySDRDevice_setGain(SOAPY.dev, SOAPY_SDR_RX, SOAPY.channel, gain) < 0) {
             fprintf(stderr, "soapy: setGain(%.1fdB) failed\n", gain);
             goto error;
+        }
+        // Say what was actually applied. A gain silently clamped to the device
+        // maximum is exactly how this went unnoticed.
+        {
+            double applied = SoapySDRDevice_getGain(SOAPY.dev, SOAPY_SDR_RX, SOAPY.channel);
+            if (fabs(applied - gain) > 0.6) {
+                fprintf(stderr, "soapy: requested %.1f dB gain, device applied %.1f dB "
+                                "(range %.1f..%.1f dB)\n",
+                        gain, applied, SOAPY.gain_range.minimum, SOAPY.gain_range.maximum);
+            }
         }
 
         for (int i = 0; i < SOAPY.num_gain_elements; ++i) {
