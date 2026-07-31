@@ -1,3 +1,30 @@
+readsb (3.16.15-4) stable; urgency=medium
+
+  * sdr_soapy: fill the whole block. SoapySDRDevice_readStream() returns at
+    most getStreamMTU() elements per call, but the reader called it once and
+    treated the result as a complete block. That holds only for drivers whose
+    MTU is >= Modes.sdr_buf_samples -- true for rtlsdr, false for others. On a
+    LimeSDR Mini v2 the MTU is 2040 against a default buffer of 65536, so every
+    block arrived about 3% full and messages straddling a boundary were lost.
+    Measured on aryaos-c998 at 1090 MHz, same antenna and gain, before -> after:
+    samples lost 63496 -> 0, "unusual size" warnings present -> none, Mode-S
+    preambles 747933 -> 1377340.
+
+  * sdr_soapy: a single SOAPY_SDR_OVERFLOW no longer ends reception. Any
+    negative readStream() return previously broke out of the reader loop, so
+    one driver-side overrun stopped the process receiving at all. An overflow
+    means samples were dropped, not that the stream is dead.
+
+  * NOT claimed: that a LimeSDR is now a good ADS-B receiver. On the test box
+    it still decodes only a couple of messages. The Lime carries no 1090 MHz
+    SAW filter or LNA and its own noise floor swamps the signal: measured 18
+    samples >20dB over the median at 1090 MHz against 0 at a 1040 MHz control,
+    i.e. real but very weak traffic, with SNR near 0 dB at every gain setting
+    and the LNA already pinned at its 30 dB maximum. That is an RF sensitivity
+    limit wanting an external filtered LNA, not a code change.
+
+ -- Greg Albrecht <oss@snstac.com>  Fri, 31 Jul 2026 17:30:00 +0000
+
 readsb (3.16.15-3) stable; urgency=medium
 
   * sdr_soapy: --gain was applied ten times too large. readsb.c parses the
