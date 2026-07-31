@@ -1,3 +1,25 @@
+readsb (3.16.15-3) stable; urgency=medium
+
+  * sdr_soapy: --gain was applied ten times too large. readsb.c parses the
+    option into Modes.gain as tenths of a dB, because librtlsdr's
+    rtlsdr_set_tuner_gain() takes tenths. The SoapySDR path passed that value
+    straight to SoapySDRDevice_setGain(), which takes plain dB, so every
+    setting above ~6.2 clamped silently to the device maximum and the front
+    end sat pinned wide open. Also warns when the device applies a materially
+    different gain than was requested; silent clamping is how this went
+    unnoticed, since readsb reported the gain it asked for, never the gain it
+    got.
+
+  * NOT claimed: that this makes a LimeSDR decode ADS-B. It fixes a units bug
+    that is wrong on any SoapySDR device. A separate claim in the upstream
+    commit message -- that the Lime delivers 12-bit data in the CS16 container
+    roughly 18 dB below full scale -- has since been MEASURED FALSE: sampling
+    the raw stream at gain 60 gives peak 31216 of 32767, i.e. the driver does
+    scale to full 16-bit range. That earlier figure was taken with the front
+    end clamped by this very bug.
+
+ -- Greg Albrecht <oss@snstac.com>  Fri, 31 Jul 2026 12:00:00 +0000
+
 readsb (3.16.15-2) stable; urgency=medium
 
   * Rebuild on Debian trixie: the 3.16.15-1 debs were built on Ubuntu
