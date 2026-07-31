@@ -25,6 +25,7 @@
 #include <SoapySDR/Version.h>
 #include <SoapySDR/Device.h>
 #include <SoapySDR/Formats.h>
+#include <SoapySDR/Errors.h>
 
 static struct {
     SoapySDRDevice *dev;
@@ -492,15 +493,69 @@ void soapyRun()
         int flags;
         long long timeNs;
 
-        int32_t samples_read = SoapySDRDevice_readStream(SOAPY.dev, SOAPY.stream, (void *) &buf, buffer_elements, &flags, &timeNs, 5000000);
+        // SoapySDRDevice_readStream() returns AT MOST getStreamMTU() elements per
+        // call. This used to call it once and treat whatever came back as a whole
+        // block, which is only correct for drivers whose MTU happens to be >=
+        // Modes.sdr_buf_samples -- true for rtlsdr, false for others.
+        //
+        // On a LimeSDR Mini v2 the MTU is 2040 samples against a default
+        // sdr_buf_samples of 65536, so every "block" arrived about 3% full and the
+        // demodulator saw 32x more block boundaries than usable runs of samples.
+        // Mode-S messages straddling those boundaries are simply lost. Measured on
+        // aryaos-c998 at 1090 MHz, with gain verified correct at 40.0dB:
+        //
+        //   weirdness: ... (got 2040 samples, expected 65536 samples)
+        //   747933 Mode-S message preambles received
+        //        1 total usable messages
+        //        0 airborne position messages received
+        //
+        // The signal was plainly present -- three quarters of a million preambles
+        // -- and the block framing destroyed all but one of them. So fill the
+        // buffer with however many reads it takes.
+        int32_t samples_read = 0;
+        bool stream_error = false;
+        int empty_reads = 0;
 
+        while (samples_read < buffer_elements && !Modes.exit) {
+            void *buffs[1];
+            buffs[0] = buf + (size_t) samples_read * 4;
+
+            int32_t n = SoapySDRDevice_readStream(SOAPY.dev, SOAPY.stream, buffs,
+                    buffer_elements - samples_read, &flags, &timeNs, 5000000);
+
+            if (n > 0) {
+                samples_read += n;
+                empty_reads = 0;
+                continue;
+            }
+
+            if (n == 0 || n == SOAPY_SDR_TIMEOUT) {
+                // Bail out of a stalled stream rather than spinning forever, but
+                // give a partially filled buffer a couple of chances first.
+                if (++empty_reads > 2) {
+                    break;
+                }
+                continue;
+            }
+
+            if (n == SOAPY_SDR_OVERFLOW) {
+                // The driver dropped samples but the stream is still healthy.
+                // Previously ANY negative return broke out of the reader loop
+                // entirely, so one overrun ended reception for the whole process.
+                continue;
+            }
+
+            fprintf(stderr, "soapy: readStream failed: %s\n", SoapySDRDevice_lastError());
+            stream_error = true;
+            break;
+        }
+
+        if (stream_error) {
+            break;
+        }
         if (samples_read == 0) {
             usleep(500);
             continue;
-        }
-        if (samples_read < 0) {
-            fprintf(stderr, "soapy: readStream failed: %s\n", SoapySDRDevice_lastError());
-            break;
         }
 
         int64_t sysMicroseconds = mono_micro_seconds();
